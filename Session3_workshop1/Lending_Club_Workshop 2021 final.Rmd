@@ -520,7 +520,7 @@ data.frame(
 
 >Answer here:
 
-- Yes. From the results of linear regressions, we find almost all the time related variables significant. Therefore, the interest rates do change over time. The predictions can be improved by adding quarter-year dummies. The improvement on RMSE is from 0.0103 to 0.0076.
+- Yes. From the results of linear regressions, we find almost all the time related variables significant. Therefore, the interest rates do change over time. The predictions can be improved by adding quarter-year dummies. The RMSE has been improved from 0.0103 to 0.0076.
 
 # Using Bond Yields 
 One concern with using time trends for forecasting is that in order to make predictions for future loans we will need to project trends to the future. This is an extrapolation that may not be reasonable, especially if macroeconomic conditions in the future change. Furthermore, if we are using quarter-year dummies, it is not even possible to estimate the coefficient of these dummy variables for future quarters.
@@ -563,10 +563,8 @@ lc_with_bonds%>%
   geom_smooth(method="lm")
 
 #let's train a model using the bond information
-
-
 plsFit<-train(
-    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc + yq * grade + Price * grade, #fill your variables here 
+    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc  + Price * grade, #fill your variables here 
     lc_with_bonds,
     method = "lm",
     trControl = control
@@ -612,7 +610,7 @@ lc_bonds_cpi%>%
 
 
 plsFit<-train(
-    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc + yq * grade +  CPALTT01USQ657N * grade, #fill your variables here 
+    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc + Price*grade+ CPALTT01USQ657N * grade, #fill your variables here 
     lc_bonds_cpi,
     method = "lm",
     trControl = control
