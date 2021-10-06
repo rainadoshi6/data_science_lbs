@@ -83,7 +83,7 @@ The data is now in a clean format stored in the dataframe "lc_clean."
 
 Provide your answers in the code block below. (Look at "Lending_Club_Session1_and_2.html" for some hints on how to do this using ggplot.)
 
-```{r, data_visualisation, message=FALSE, eval=FALSE}
+```{r, data_visualisation, message=FALSE}
 # Build a histogram of interest rates. Make sure it looks nice!
 ggplot(lc_clean, aes(x=int_rate))+  
   geom_histogram(binwidth=0.01)+scale_x_continuous(labels = scales::percent) +labs(x="Interest Rate")
@@ -122,7 +122,7 @@ glimpse(lc_clean)
 
 We start with a simple but quite powerful model.
 
-```{r, simple regression, message=FALSE, eval=FALSE}
+```{r, simple regression, message=FALSE}
 # Use the lm command to estimate a regression model with the following variables "loan_amnt",  "term", "dti", "annual_inc", and "grade"
 
 model1<-lm(int_rate ~ loan_amnt + term + dti + annual_inc + grade, data = lc_clean
@@ -155,7 +155,7 @@ Let's build progressively more complex models, with more features.
 
 
 
-```{r, Feature Engineering, message=FALSE, eval=FALSE}
+```{r, Feature Engineering, message=FALSE}
 
 #Add to model 1 an interaction between loan amount and grade. Use the "var1*var2" notation to define an interaction term in the linear regression model. This will add the interaction and the individual variables to the model. 
 
@@ -238,7 +238,7 @@ The predictive accuracy changes by .0001, which is basically zero. This is sensi
 
 We can also do out of sample testing using the method of k-fold cross validation. Using the caret package this is easy.
 
-```{r, k-fold cross validation}
+```{r, 10-fold cross validation}
 #the method "cv" stands for cross validation. We re going to create 10 folds.  
 
 control <- trainControl (
@@ -261,7 +261,7 @@ summary(plsFit)
 ```
 
 
-```{r, k-fold cross validation}
+```{r, 5-fold cross validation, eval=FALSE}
 #the method "cv" stands for cross validation. We re going to create 10 folds.  
 
 control <- trainControl (
@@ -283,7 +283,7 @@ summary(plsFit)
 
 ```
 
-```{r, k-fold cross validation}
+```{r, 15-fold cross validation, eval=FALSE}
 #the method "cv" stands for cross validation. We re going to create 10 folds.  
 
 control <- trainControl (
@@ -450,7 +450,6 @@ Let's try to further improve the model's predictive performance. So far we have 
 First, investigate graphically whether there are any time trends in the interest rates. (Note that the variable "issue_d" only has information on the month the loan was awarded but not the exact date.) Can you use this information to further improve the forecasting accuracy of your model? Try controlling for time in a linear fashion (i.e., a linear time trend) and controlling for time as quarter-year dummies (this is a method to capture non-linear effects of time -- we assume that the impact of time doesn't change within a quarter but it can chance from quarter to quarter). Finally, check if time affect loans of different grades differently.
 
 ```{r, time trends}
-
 #linear time trend (add code below)
 ggplot(lc_clean, aes(x=issue_d, y=int_rate))+
   geom_point(size=0.1)+
@@ -465,7 +464,7 @@ ggplot(lc_clean, aes(x=issue_d, y=int_rate, color=grade))+
 #The first model has some explanatory variables and a linear time trend
 
 time1<-train(
-  int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + issue_d ,#fill your variables here "+ issue_d"
+  int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + issue_d , #fill your variables here "+ issue_d"
   lc_clean,
   method = "lm",
   trControl = control)
@@ -474,7 +473,7 @@ summary(time1)
 
 #The second model has a different linear time trend for each grade class
 time2<-train(
-    int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + issue_d + issue_d * grade, #fill your variables here 
+    int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + issue_d * grade, #fill your variables here 
     lc_clean,
    method = "lm",
     trControl = control
@@ -501,7 +500,7 @@ summary(time3)
 
 #We specify one quarter dummy variable for each grade. This is going to be a large model as there are 19 quarters x 7 grades = 133 quarter-grade dummies.
 time4<-train(
-    int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + yq + yq * grade, #fill your variables here 
+    int_rate ~ loan_amnt*grade + term +dti + quartiles_annual_inc + yq * grade, #fill your variables here 
     lc_clean_quarter,
      method = "lm",
     trControl = control
@@ -521,7 +520,7 @@ data.frame(
 
 >Answer here:
 
-Yes. From the results of linear regressions, we find almost all the time related variables significant. Therefore, the interest rates do change over time. The predictions can be improved by adding quarter-year dummies. The improvement on RMSE is from 0.0103 to 0.0076.
+- Yes. From the results of linear regressions, we find almost all the time related variables significant. Therefore, the interest rates do change over time. The predictions can be improved by adding quarter-year dummies. The improvement on RMSE is from 0.0103 to 0.0076.
 
 # Using Bond Yields 
 One concern with using time trends for forecasting is that in order to make predictions for future loans we will need to project trends to the future. This is an extrapolation that may not be reasonable, especially if macroeconomic conditions in the future change. Furthermore, if we are using quarter-year dummies, it is not even possible to estimate the coefficient of these dummy variables for future quarters.
@@ -543,32 +542,38 @@ bond_prices <- bond_prices %>%
 #let's see what happened to bond yields over time. Lower bond yields mean the cost of borrowing has gone down.
 
 bond_prices %>%
-  ggplot(aes(x=Date2, y=Price))+geom_point(size=0.1, alpha=0.5)
+  ggplot(aes(x=Date2, y=Price))+
+  geom_point(size=0.1, alpha=0.5)
 
 #join the data using a left join
-lc_with_bonds<-lc_clean %>%
+lc_with_bonds <- lc_clean %>%
+  mutate(yq = as.factor(as.yearqtr(lc_clean$issue_d, format = "%Y-%m-%d"))) %>% 
   left_join(bond_prices, by = c("issue_d" = "Date2")) %>%
   arrange(issue_d) %>%
   filter(!is.na(Price)) #drop any observations where there re no bond prices available
 
 # investigate graphically if there is a relationship 
 lc_with_bonds%>%
-  ggplot(aes(x=int_rate, y=Price))+geom_point(size=0.1, alpha=0.5)+geom_smooth(method="lm")
+  ggplot(aes(x=int_rate, y=Price))+
+  geom_point(size=0.1, alpha=0.5)+geom_smooth(method="lm")
 
 lc_with_bonds%>%
-  ggplot(aes(x=int_rate, y=Price, color=grade))+geom_point(size=0.1, alpha=0.5)+geom_smooth(method="lm")
+  ggplot(aes(x=int_rate, y=Price, color=grade))+
+  geom_point(size=0.1, alpha=0.5)+
+  geom_smooth(method="lm")
 
 #let's train a model using the bond information
 
 
 plsFit<-train(
-    int_rate ~  , #fill your variables here 
+    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc + yq * grade + Price * grade, #fill your variables here 
     lc_with_bonds,
-   method = "lm",
+    method = "lm",
     trControl = control
    )
 summary(plsFit)
 ```
+
 ## Q9. Do bond yields have any explanatory power? Do not forget to interpret coeficicents.
 
 >Answer here: 
@@ -579,5 +584,42 @@ Feel free to investigate more models with different features using the methodolo
 >Answer here:
 
 ## Q11. Use other publicly available datasets to further improve performance (e.g., quarterly data on US inflation or [CPI](https://fred.stlouisfed.org/series/CPALTT01USQ657N)).
+
+```{r}
+cpi <- readr::read_csv("ConsumerPriceIndex.csv") %>% 
+  mutate(yq = as.factor(as.yearqtr(DATE, format = "%Y-%m-%d")))
+
+lc_bonds_cpi <- lc_with_bonds %>% 
+  left_join(cpi, by = c("yq")) %>% 
+  arrange(issue_d) %>%
+  filter(!is.na(CPALTT01USQ657N)) #drop any observations where there re no bond prices available
+
+# investigate graphically if there is a relationship 
+lc_bonds_cpi%>%
+  ggplot(aes(x=CPALTT01USQ657N))+
+  geom_histogram()
+
+# investigate graphically if there is a relationship 
+lc_bonds_cpi%>%
+  ggplot(aes(x=int_rate, y=CPALTT01USQ657N))+
+  geom_point(size=0.1, alpha=0.5)+
+  geom_smooth(method="lm")
+
+lc_bonds_cpi%>%
+  ggplot(aes(x=int_rate, y=CPALTT01USQ657N, color=grade))+
+  geom_point(size=0.1, alpha=0.5)+
+  geom_smooth(method="lm")
+
+
+plsFit<-train(
+    int_rate ~  loan_amnt*grade + term +dti + quartiles_annual_inc + yq * grade +  CPALTT01USQ657N * grade, #fill your variables here 
+    lc_bonds_cpi,
+    method = "lm",
+    trControl = control
+   )
+summary(plsFit)
+
+```
+
 
 # Explain why you think the additional data will make a difference and check if it does.{-}
