@@ -542,12 +542,12 @@ Instead, perhaps it's better to find the reasons as to why different periods are
 
 ```{r, bond yields}
 #load the data to memory as a dataframe
-bond_prices <- readr::read_csv("MonthBondYields.csv")
+bond_prices<-readr::read_csv("MonthBondYields.csv")
 
 #make the date of the bond file comparable to the lending club dataset
 #for some regional date/number (locale) settings this may not work. If it does try running the following line of code in the Console
 #Sys.setlocale("LC_TIME","English")
-bond_prices <- bond_prices %>% 
+bond_prices <- bond_prices %>%
   mutate(Date2=as.Date(paste("01",Date,sep="-"),"%d-%b-%y")) %>%
   select(-starts_with("X"))
 
@@ -595,17 +595,11 @@ summary(plsFit)
 
 * We are using loan amount times grade,term, dti and Price times grade to predict the interest rates
 * Yes, by adding bond yields to the model, the adjusted R square increased by 0.01, and the bond yields are significant on every grade
-* With increase in bond yield (price) by 1%, the interest rates on the loan increase by 0.13% on Grade A loans, and so on
-* add a point on correlations
-
 
 ## Q10. Choose a model and describe your methodology {-}
 Feel free to investigate more models with different features using the methodologies covered so far. Present the model you believe predicts interest rates the best. Describe how good it is (including the length of the 95% Confidence Interval of predictions that use this model) and what features it uses. What methodology did you use to choose it? (Do not use time trends or quarter-year dummies in your model as the first cannot be extrapolated into the future reliably and the second cannot be even estimated for future quarters.)
 
 >Answer here:
-
-
-
 
 ## Q11. Use other publicly available datasets to further improve performance (e.g., quarterly data on US inflation or [CPI](https://fred.stlouisfed.org/series/CPALTT01USQ657N)).
 
