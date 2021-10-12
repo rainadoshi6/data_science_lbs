@@ -31,6 +31,7 @@ library(huxtable) # to get summary table of all models produced
 library(caret) # to train more advanced models (k-fold cross-validation, stepwise regression, LASSO)
 library(zoo) #to allow for time series operations
 library(glmnet)
+library(here)
 
 ```
 
@@ -598,26 +599,26 @@ TestModel1<-train(
    )
 summary(TestModel1)
 
-TestModel2<-train(
-    int_rate ~  loan_amnt*grade + term +dti + Price * grade + quartiles_annual_inc + home_ownership + addr_state , 
-    lc_with_bonds,
-    method = "lm",
-    trControl = control
-   )
-summary(TestModel2)
-
-TestModel3<-train(
-    int_rate ~  loan_amnt*grade + term +dti + Price * grade + quartiles_annual_inc + term*loan_amnt, 
-    lc_with_bonds,
-    method = "lm",
-    trControl = control
-   )
-summary(TestModel3)
+# TestModel2<-train(
+#     int_rate ~  loan_amnt*grade + term +dti + Price * grade + quartiles_annual_inc + home_ownership + addr_state , 
+#     lc_with_bonds,
+#     method = "lm",
+#     trControl = control
+#    )
+# summary(TestModel2)
+# 
+# TestModel3<-train(
+#     int_rate ~  loan_amnt*grade + term +dti + Price * grade + quartiles_annual_inc + term*loan_amnt, 
+#     lc_with_bonds,
+#     method = "lm",
+#     trControl = control
+#    )
+# summary(TestModel3)
 ```
 
-- We have tried different models by adding home ownership, loan purpose, delinq_2 years,quartiles_annual_income and term*loan_amt, and they have either decreased our R-squared or increased it very insignificantly. 
+- We have tried different models by adding home ownership, loan purpose, delinq_2 years,quartiles_annual_income and term$\times$loan_amt, and they have either decreased our R-squared or increased it very insignificantly. By adding more interaction terms and time information, the R^2 can be improved to 96% but it takes hours to run the model.
 
-- After several attempts to increase the performance of the model (RMSE, R^2) by adding additional variables, we found that TestModel1 is the best model. This is because the performance doesn't improve significantly with more variables and TestModel1 is the least complex. 
+- After several attempts to increase the performance of the model (RMSE, R^2) by adding additional variables, we consider TestModel1 is the best model. This is because the performance doesn't improve significantly with more variables and TestModel1 is the least complex while with enough accuracy.
 
 - TestModel1 uses loam_amnt$\times$grade, term, dti, Price$\times$grade, quartiles_annual_inc to predict the interest rate. It achieves an R^2 of 0.934 and an RMSE of 0.009584. The model can be used for prediction and extrapolated into the future as we didn't include any time dummy variables. 
 
