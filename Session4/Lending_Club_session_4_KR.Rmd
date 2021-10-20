@@ -1,0 +1,632 @@
+---
+title: "Lecture 4: Classification with Logistic Regression"
+output:
+  html_document:
+    theme: cerulean
+    highlight: zenburn
+    number_sections: yes
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load_libraries, include = FALSE}
+library(tidyverse) # the usual stuff: dplyr, readr, and other goodies
+library(lubridate) # to handle dates
+library(GGally) # for correlation-scatter plot matrix
+library(ggfortify) # to produce residual diagnostic plots
+library(rsample) # to split dataframe in training- & testing sets
+library(janitor) # clean_names()
+library(broom) # use broom:augment() to get tidy table with regression output, residuals, etc
+library(huxtable) # to get summary table of all models produced
+library(caret) # to train more advanced models (k-fold cross-validation, stepwise regression, LASSO)
+library(nnet) # to calculate the maximum value of a vector
+library(pROC) # to plot ROC curves
+library(MLmetrics) #for caret LASSO logistic regression
+library(sampling) # to split dataframe in training- & testing sets
+```
+
+
+# Introduction
+
+The goal of this markdown document is to walk you through the mechanics of using logistic regression for classification. The example we will use is the [Lending Club](https://www.lendingclub.com/), a peer-to-peer lender. The goal is to come up with a model for predicting which loans are more likely to default.  
+
+
+## Load the data
+
+First we need to start by loading the data.
+```{r, load_data, warning=FALSE, message=FALSE}
+
+lc_raw <- read_csv("LendingClub Data.csv",  skip=1) %>%  #since the first row is a title we want to skip it. 
+  clean_names() # use janitor::clean_names()
+```
+
+# ICE the data: Inspect, Clean, Explore
+
+Any data science engagement starts with ICE. Inspecting, Clean and Explore the data. 
+
+## Inspect
+
+Inspect the data to understand what different variables mean. Variable definitions can be found in the excel version of the data.
+```{r, Inspect}
+#glimpse(lc_raw)
+```
+
+## Clean
+Are there any redundant columns and rows? Are all the variables in the correct format (e.g., numeric, factor, date)? Lets fix it. 
+
+The variable "loan_status" contains information as to whether the loan has been repaid or charged off (i.e., defaulted). Let's create a binary factor variable for this. This variable will be the focus of this workshop.
+
+```{r, clean data}
+lc_clean<- lc_raw %>%
+  dplyr::select(-x20:-x80) %>% #delete empty columns
+  filter(!is.na(int_rate)) %>%   #delete empty rows
+  mutate(
+    issue_d = mdy(issue_d),  # lubridate::mdy() to fix date format
+    term = factor(term_months),     # turn 'term' into a categorical variable
+    delinq_2yrs = factor(delinq_2yrs) # turn 'delinq_2yrs' into a categorical variable
+  ) %>% 
+  mutate(default = dplyr::recode(loan_status, 
+                      "Charged Off" = "1", 
+                      "Fully Paid" = "0"))%>%
+    mutate(default = as.factor(default)) %>%
+  dplyr::select(-emp_title,-installment, -term_months, everything()) #move some not-so-important variables to the end. 
+    
+```
+
+## Explore the data
+
+Let's explore default by creating different visualizations. We start with examining how prevalent defaults are, whether the default rate changes by loan grade or number of delinquencies, and a couple of scatter plots of defaults against loan amount and income.
+
+```{r, visualization of defaults, warning=FALSE}
+#bar chart of defaults
+def_vis1<-ggplot(data=lc_clean, aes(x=default)) +geom_bar(aes(y = (..count..)/sum(..count..))) + labs(x="Default, 1=Yes, 0=No", y="relative frequencies") +scale_y_continuous(labels=scales::percent) +geom_text(aes( label = scales::percent((..count..)/sum(..count..) ),y=(..count..)/sum(..count..) ), stat= "count",vjust=-0.5) 
+def_vis1
+
+#bar chart of defaults per loan grade
+def_vis2<-ggplot(data=lc_clean, aes(x=default), group=grade) +geom_bar(aes(y = (..count..)/sum(..count..), fill = factor(..x..)), stat="count")  + labs(title="Defaults by Grade", x="Default, 1=Yes, 0=No", y="relative frequencies") +scale_y_continuous(labels=scales::percent) +facet_grid(~grade) + theme(legend.position = "none") +geom_text(aes( label = scales::percent((..count..)/sum(..count..) ),y=(..count..)/sum(..count..) ), stat= "count",vjust=-0.5) 
+def_vis2
+
+#bar chart of defaults per number of Delinquencies
+def_vis3<-lc_clean %>%
+  filter(as.numeric(delinq_2yrs)<4) %>%
+  ggplot(aes(x=default), group=delinq_2yrs) +geom_bar(aes(y = (..count..)/sum(..count..), fill = factor(..x..)), stat="count")  + labs(title="Defaults by Number of Delinquencies", x="Default, 1=Yes, 0=No", y="relative frequencies")  +scale_y_continuous(labels=scales::percent) +facet_grid(~delinq_2yrs) + theme(legend.position = "none") +geom_text(aes( label = scales::percent((..count..)/sum(..count..) ),y=(..count..)/sum(..count..) ), stat= "count",vjust=-0.5)
+
+def_vis3
+
+#scatter plots 
+
+#We select 2000 random loans to display only to make the display less busy. 
+set.seed(1234)
+reduced<-lc_clean[sample(0:nrow(lc_clean), 2000, replace = FALSE),]%>%
+  mutate(default=as.numeric(default)-1) # also convert default to a numeric {0,1} to make it easier to plot.
+
+          
+# scatter plot of defaults against loan amount                         
+def_vis4<-ggplot(data=reduced, aes(y=default,x=I(loan_amnt/1000)))  + labs(y="Default, 1=Yes, 0=No", x="Loan Amnt (1000 $)") +geom_jitter(width=0, height=0.05, alpha=0.7) #We use jitter to offset the display of defaults/non-defaults to make the data easier to interpert. We have also changed the amount to 1000$ to reduce the number of zeros on the horizontal axis.
+
+def_vis4
+
+#scatter plot of defaults against loan amount.
+def_vis5<-ggplot(data=reduced, aes(y=default,x=I(annual_inc/1000)))   + labs(y="Default, 1=Yes, 0=No", x="Annual Income(1000 $)") +geom_jitter(width=0, height=0.05, alpha=0.7) +  xlim(0,400)
+
+def_vis5
+
+```
+
+We can also estimate a correlation table between defaults and other continuous variables.
+
+```{r, correlation table, warning=FALSE, message=FALSE}
+
+# correlation table using GGally::ggcor()
+# this takes a while to plot
+
+lc_clean %>% 
+    mutate(default=as.numeric(default)-1)%>%
+  select(loan_amnt, dti, annual_inc, default) %>% #keep Y variable last
+ ggcorr(method = c("pairwise", "pearson"), label_round=2, label = TRUE)
+
+```
+
+# Linear regression for binary response variables
+
+It is certainly possible to find the line that minimizes the sum of square errors when the dependent variable is binary (i.e., default no default). In this case, the predicted values take the interpretation of a probability. We do this below.
+
+```{r, linear regression with binary response variable, warning=FALSE}
+
+model_lm<-lm(as.numeric(default)~I(annual_inc/1000), lc_clean)
+summary(model_lm)
+
+
+ggplot(data=reduced, aes(x=I(annual_inc/1000), y=default)) + geom_smooth(method="lm", se=1)+ labs(y="Prob of Default", x="Annual Income(1000 $)")+  xlim(0,450)+scale_y_continuous(labels=scales::percent)+geom_jitter(width=0, height=0.05, alpha=0.7)
+
+```
+
+> Can you see what's wrong with this model? What happens to the predicted probability when the income exceeds $400K?
+
+# Logistic regression model for binary response variables 
+
+A more reliable model of estimating the propensity of default given some explanatory variables is the Logistic regression. The model first assumes that there is a risk factor $U$ associated with default such that $U=b_0+b_1 X_1 + b_2 X_2 +...$. The probability of default is then equal to the non-linear transformation: $p=\frac{\exp(U)}{1+\exp(U)}$. This ensures that the estimated probabilities will always be between 0 and 1. The model is estimated using the principle of maximum likelihood -- essentially, we are asking what coefficient values are most likely to have generated our data. To find the coefficients that maximize the likelihood (or more often the logarithm of the likelihood) we need to use a numerical solver -- unlike OLS regression there are no formulas that we can solve to estimate the logistic coefficients. As a result, logistic regression tends to be more computationally intensive to estimate than linear regression, especially as the number of coefficients and the size of the dataset increases.
+
+Let's see an example of the logistic regression model below -- let's call this model logistic 1.
+
+```{r, Simple Logistic Regression, warning=FALSE}
+
+logistic1<-glm(default~I(annual_inc/1000), family="binomial", lc_clean)
+summary(logistic1)
+
+
+ggplot(data=reduced, aes(x=I(annual_inc/1000), y=default)) + geom_smooth(method="lm", se=0, aes(color="OLS"))+ geom_smooth(method = "glm", method.args = list(family = "binomial"),  se=0, aes(color="Logistic"))+ labs(y="Prob of Default", x="Annual Income(1000 $)")+  xlim(0,450)+scale_y_continuous(labels=scales::percent)+geom_jitter(width=0, height=0.05, alpha=0.7) + scale_colour_manual(name="Fitted Model", values=c("blue", "red"))
+
+
+```
+
+The estimated coefficients of the logistic regression also come with a standard error and p-value associated with them. These have the same interpretations as the OLS regression model. In general, we do not want to have features whose coefficients are not statistically significant in the model. 
+
+Unlike linear regression, R-square is not a good measure of goodness of fit, as the model is not trying to minimize square error. The Deviance measure reported at the end of the summary table is a goodness of fit measure, the lower this is the better the fit of the model. The formula for deviance is $2\log (L)$, where $L$ is the log-likelihood. R also reports the Null Deviance, this is the deviance of a model without any feature (only intercept). Furthermore, R reports the AIC (Akaike Information Criterion) which penalizes the model for the number of coefficients ($k$) it has to estimate. The formula for AIC is $2\log(L)+2k$. So when comparing different models with a different number of features we should look at their Deviance. 
+
+We can estimate logistic regression with multiple explanatory variables as well. Let's call this model logistic 2.
+
+```{r, multivariate logistic regression}
+logistic2<-glm(default~annual_inc + term + grade + loan_amnt, family="binomial", lc_clean)
+summary(logistic2)
+
+#compare the fit of logistic 1 and logistic 2
+anova(logistic1,logistic2)
+
+```
+> Based on the significance of the coefficients and the Deviance measure, is logistic 2 a better model than logistic 1? 
+
+We can also see the predicted probabilities of default associated with each model. See the code below, which plots the predicted probabilities for loans that defaults and for those that did not.
+```{r}
+#Predict the probability of default
+prob_default1<-predict(logistic1,lc_clean,type="response")
+prob_default2<-predict(logistic2,lc_clean,type="response")
+
+#plot 1: density of predictions
+g0<-ggplot( lc_clean, aes( prob_default1 ) )+
+  geom_density( size=1)+
+  ggtitle( "Predicted Probability with Logistic 1" )+  xlab("Estimated Probability")
+g0
+
+#plot 2: denisity of predictions by default
+g1<-ggplot( lc_clean, aes( prob_default1, color=default) ) +
+  geom_density( size=1)+
+  ggtitle( "Predicted Probability with Logistic 1" )+  xlab("Estimated Probability")
+g1
+
+#plot 1: density of predictions
+g2<-ggplot( lc_clean, aes( prob_default2 ) )+
+  geom_density( size=1)+
+  ggtitle( "Predicted Probability with Logistic 2" )+  xlab("Estimated Probability")
+g2
+
+#plot 2: denisity of predictions by default
+g3<-ggplot( lc_clean, aes( prob_default2, color=default) ) +
+  geom_density( size=1)+
+  ggtitle( "Predicted Probability with Logistic 2" )+
+  xlab("Estimated Probability")
+
+g3
+```
+> Can you see why model 2 is better than model 1? 
+
+## From probability to classification
+
+The logistic regression model gives us a sense of how likely defaults are, it gives us a probability estimate. To convert this into a prediction, we need to choose a cut-off threshold and call every prediction with a probability above this cutoff as a prediction that the loan will default. Vice versa, a prediction with a probability below the cutoff will become a prediction that the loan will not default. 
+
+Let's choose a threshold of 25%. Of course some of our predictions will turn out to be right but some will turn out to be wrong -- you can see this in the density figures of the previous section. Let's call "default" the "positive" class since this is the class we are trying to predict. We could be making two types of mistakes. False positives (i.e., predict that a loan will default when it will not) and false negatives (I.e., predict that a loan will not default when it does). These errors are summarized in the confusion matrix. Let's see how this works for model 2.
+
+```{r, From probability to classification}
+#using the logistic 2 model we can predict default probabilities 
+prob_default2<-predict(logistic2,lc_clean,type="response") #this is a vector of probabilities of default
+one_or_zero<-ifelse(prob_default2>0.25,"1","0") #If the the probability is great than the threshold of 0.25 then output 1 otherwise 0
+p_class<-factor(one_or_zero,levels=levels(lc_clean$default)) #this is a vector of predictions of default (1) vs non default (0)
+
+con2<-confusionMatrix(p_class,lc_clean$default,positive="1") #the first input is the class prediction, the second input is the actual outcomes. We also define the positive outcome to be "1" (i.e., default is the outcome we consider "positive"). The output is a confusion matrix.
+con2
+```
+
+The confusion matrix gives us the number of false positives (`r con2$table[2,1]`), false negative (`r con2$table[1,2]`) as well as the true negatives (`r con2$table[1,1]`) and true positives (`r con2$table[2,2]`). 
+
+It also gives us
+
+1. Accuracy (`r con2$overall[1]`) which is the probability that a prediction will be correct (given by number of true predictions divided by the total number of predictions).
+
+2. Sensitivity (`r con2$byClass[1]`) which tells us how often positive outcomes (i.e., defaults) are predicted correctly (also refereed to as true positive rate).
+
+3. Specificity (`r con2$byClass[2]`) which tells us how often negative outcomes (i.e., non-defaults) are predicted correctly (also referred to as true negative rate).
+
+The "no information rate" refers to the accuracy we could have achieved by using a classifier that uses no information (no features) -- can you think of such a no-information classifier that could achieve 85.66% accuracy? Although the accuracy of our model is lower than the random classifier our model may still be useful because it has different specificity and sensitivity compared to the random classifier -- we will investigate this further below. 
+
+The confusion matrix also gives us further information, which I encourage you to investigate.
+
+## Selecting the threshold
+
+In constructing the confusion matrix above we selected a threshold of 25%. This was an arbitrary choice. By raising the threshold the model will predict default less often and, as a result, when it predicts default it will be right more often. In other words the false positive will decrease (i.e., the sensitivity will increase). But this will come at the expense of making more false negatives -- the model's specificity will be lower. 
+
+Deciding on the threshold will depend on the relative cost and benefit associated with this errors. Let's see an example. Let's assume that I will not give out loans to anyone that I predict will default, in which case any prediction of default is associated with zero cost and zero benefit. If I predict that a loan application will not default I will extend the loan and if I am right i will make a positive return of \$10 per loan but if I am wrong a negative return of \$-70. Given this costs and benefits associated with predictions, if I use a threshold of 25% I can use the confusion matrix to estimate my profit by using this formula: 
+
+`con2\$table[1,1]*10 - con2\$table[1,2]*70` 
+
+which is equal to \$`r con2$table[1,1]*10-con2$table[1,2]*70` or \$`r round((con2$table[1,1]*10-con2$table[1,2]*70)/nrow(lc_clean),2)` per loan in the dataset.
+
+But perhaps there is another threshold that achieves a higher profit? I investigate the performance below.
+
+
+```{r, cost and benefit analysis}
+#We will repeat the cost/benefit analysis we did before but for different thresholds
+
+#define the parameters profit and threshold
+profit=0
+threshold=0
+#loop over 100 thresholds
+for(i in 1:100) {
+  threshold[i]=i/400 
+  one_or_zero_search<-ifelse(prob_default2>threshold[i],"1","0")
+  p_class_search<-factor(one_or_zero_search,levels=levels(lc_clean$default))
+
+  con_search<-confusionMatrix(p_class_search,lc_clean$default,positive="1")
+  #calculate the profit associated with the threshold
+  profit[i]=con_search$table[1,1]*10-con_search$table[1,2]*70
+}
+#plot profit against threshold (using a smoothed line to connect the points)
+ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) + geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with logistic 2")
+
+#output the maximum profit and the associated threshold
+paste0("Maximum profit per loan is $", round(max(profit)/nrow(lc_clean),2), " achieved at a threshold of ", threshold[which.is.max(profit)]*100,"%.")
+```
+The maximum profit per loan is $ `r round(max(profit)/nrow(lc_clean),2)` and is achieved at a threshold of `r  threshold[which.is.max(profit)]*100` %. 
+
+Let's repeat the cost and benefit analysis but instead of using our model's predictions, let's use the no information classifier that achieves the 85.66% accuracy (i.e., always predict no default) and a random classifier (i.e., one that predicts probabilities of loans randomly).
+
+
+```{r}
+
+#We will do the cost/benefit analysis we did before but now using the no infomration classifier that achieves the highest possible accuracy (i.e, always predict no default) 
+
+#These are randomely chosen probabilities of default
+p_no_info=(prob_default2)*0
+
+#define the parameters profit and threshold
+profit=0
+threshold=0
+#loop over 50 thresholds
+for(i in 1:50) {
+  threshold[i]=i/200 
+  one_or_zero_search<-ifelse(p_no_info>threshold[i],"1","0")
+  p_class_search<-factor(one_or_zero_search,levels=levels(lc_clean$default))
+
+  con_search<-confusionMatrix(p_class_search,lc_clean$default,positive="1")
+  #calculate the profit associated with the threshold
+  profit[i]=con_search$table[1,1]*10-con_search$table[1,2]*70
+}
+#plot profit against threshold
+ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) + geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with no information classifier (accuracy 85.66%)")
+
+#output the maximum profit and the associated threshold
+paste0("Maximum profit per loan is $", round(max(profit)/nrow(lc_clean),2), " achieved at a threshold of ", threshold[which.is.max(profit)]*100,"%.")
+
+
+#We will repeat the cost/benefit analysis we did before but now using a random classifier 
+
+#These are randomely chosen probabilities of default
+p_random=runif(length(prob_default2), min = 0, max =1)
+
+#define the parameters profit and threshold
+profit=0
+threshold=0
+#loop over 50 thresholds
+for(i in 1:50) {
+  threshold[i]=i/200 
+  one_or_zero_search<-ifelse(p_random>threshold[i],"1","0")
+  p_class_search<-factor(one_or_zero_search,levels=levels(lc_clean$default))
+
+  con_search<-confusionMatrix(p_class_search,lc_clean$default,positive="1")
+  #calculate the profit associated with the threshold
+  profit[i]=con_search$table[1,1]*10-con_search$table[1,2]*70
+}
+#plot profit against threshold
+ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) + geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with random classifier")
+
+#output the maximum profit and the associated threshold
+paste0("Maximum profit per loan is $", round(max(profit)/nrow(lc_clean),2), " achieved at a threshold of ", threshold[which.is.max(profit)]*100,"%.")
+
+
+
+```
+
+Clearly, the random classifier does a lot worse that our model and the no-info classifier is the worst! This goes to show that overall accuracy (which is higher for the no information classifier than the logistic 2 model) is not always the best measure of model performance. 
+
+## Assessing model performance
+
+More generally though, when we create models we may not know the costs associated with errors. Therefore the analysis we have just done would not be possible. An alternative way of assessing model performance that is agnostic to the cost of classification errors is the ROC curve. This is constructed by going through all cutoffs between 0 and 1 and plotting the specificity against the sensitivity associated with each cut off point.
+
+Let's see the ROC curve associated with the model logistic 2.
+
+```{r, ROC curves, warning=FALSE}
+
+ROC_logistic2 <- roc(lc_clean$default,prob_default2) # the first argument is a vector of outcomes and the second is a vector of probabilities associated with each outcome
+
+ggroc(ROC_logistic2,  alpha = 0.5)+ ggtitle(paste("Model Logistic 2: AUC=",round(auc(lc_clean$default,prob_default2)*100, digits=2),"%"))  +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")+geom_segment(aes(x = 1, xend = 1, y = 0, yend = 1), color="black", linetype="dashed")+geom_segment(aes(x = 1, xend = 0, y = 1, yend = 1), color="black", linetype="dashed")
+
+```
+
+If the model was no better than chance (i.e., a random classifier) the ROC curve would be the gray dashed line -- a straight line from (1,0) to (0,1). The area under this curve is 1/2 (as this is a triangle with base 1 and height 1). If on the other hand the model was a perfect classifier (i.e, it predicted a probability of 100% if a loan was to default and a probability of 0% if the model was paid back) then the ROC would be the black dashed line (i.e., we could achieve 100% specificity and 100% sensitivity at the same time). The area under this curve is 1 (as this is a rectangle with width 1 and length 1). Our model is not as good as the perfect classifier but not as bad as the random classifier -- it's somewhere in the middle. The area under the curve (AUC) is also a number between 0.5 and 1 and this is a good summary statistic of how well the model explains the data. 
+
+ROC curves and AUC measures are common for any classification method, not just logistic regression! So prepare to see them again in your course (and in any classification application)! They are also useful in comparing the performance of different models. For example, let's see a comparison between the models logistic 1 and logistic 2. 
+
+
+```{r, comparing models}
+
+p1<-predict(logistic1, lc_clean, type = "response")
+
+ROC_logistic1 <- roc(lc_clean$default,p1)
+
+ggroc(list("Logistic 2"=ROC_logistic2, "Logistic 1"=ROC_logistic1))+ggtitle(paste("Model Logistic 1: AUC=",round(auc(lc_clean$default,p1)*100, digits=2),"%\nModel Logistic 2: AUC=",round(auc(lc_clean$default,prob_default2)*100, digits=2),"%"))    +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+```
+> Based on this, which model has better explanatory power, logistic 1 or logistic 2? Why?
+
+# Out of sample performance
+
+So far we fitted models in sample (i.e., we used maximum likelihood to select the coefficients that best explain the data) and the we used the same data to select a cutoff threshold and then used the same data to judge performance. Clearly, this way of doing things is prone to problems of overfitting. 
+
+To better judge our model's performance we may want to check its confusion matrix and ROC curves out of sample. We can do this easily --see the example below.
+
+```{r, ROC curves out-of-sample, warning=FALSE}
+
+set.seed(1234)
+train_test_split <- initial_split(lc_clean, prop = 0.8)
+testing <- testing(train_test_split) #20% of the data is set aside for testing
+training <- training(train_test_split) #80% of the data is set aside for training
+
+
+logistic2_out<-glm(default~annual_inc + term + grade + loan_amnt, family="binomial", training)
+
+#in-sample confusion matrix with cut-off 0.25
+p_in<-predict(logistic2, training, type = "response") #predict probability of default on the training set
+one_or_zero_in<-ifelse(p_in>0.25,"1","0") 
+p_class_in<-factor(one_or_zero_in,levels=levels(lc_clean$default)) 
+con_in<-confusionMatrix(p_class_in,training$default,positive="1") 
+con_in
+#ROC curve using in-sample predictions
+ROC_logistic2_in <- roc(training$default,p_in) 
+
+#out-of-sample confusion matrix with cut-off 0.25
+p_out<-predict(logistic2, testing, type = "response") #predict probability of default on the testing set
+one_or_zero_out<-ifelse(p_out>0.25,"1","0") 
+p_class_out<-factor(one_or_zero_out,levels=levels(lc_clean$default)) 
+con_out<-confusionMatrix(p_class_out,testing$default,positive="1") 
+con_out
+
+#ROC curve using out-of-sample predictions
+ROC_logistic2_out <- roc(testing$default,p_out) 
+
+#plot ROC curves and display AUC
+ggroc(list("Logistic 2 in-sample"=ROC_logistic2_in, "Logistic 2 out-of-sample"=ROC_logistic2_out))+ggtitle(paste("Model Logistic 2 in-sample AUC=",round(auc(lc_clean$default,prob_default2)*100, digits=2),"%\nModel Logistic 2 out-of-sample AUC=",round(auc(testing$default,p_out)*100, digits=2),"%"))    +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+```
+> Compare the accuracy, sensitivity, specificity, and the AUC in-sample and out-of-sample. Why is out-of-sample performance a little worse then in-sample?
+
+We can also do the cost/benefit analysis to determine the optimal cutoff using out-of-sample model performance. In this case, it would be better if we divided the data in three parts -- training, validation, and testing. In the training set we estimate the model coefficients, we use the validation set to estimate the cutoff threshold, and the testing set to figure out how well the model actually performs.
+
+In general, we would like the training set to be the largest of the the three (as training the model is more difficult), the validation set may also need to be larger than the testing set depending on the number of hyper-parameters (such as the cutoff threshold) we need to estimate. The testing set is typically the smallest as measuring performance is typically easier. 
+
+See an example of this below.
+
+```{r, out of sample profit curve, warning=FALSE}
+
+set.seed(1212)
+train_test_split <- initial_split(lc_clean, prop = 0.6)
+training <- training(train_test_split) #60% of the data is set aside for training
+
+remaining <- testing(train_test_split) #40% of the data is going to be used for validation and testing
+
+set.seed(321)
+train_test_split <- initial_split(remaining, prop = 0.5)
+testing <- training(train_test_split) #50% of the the remaining data will be used for training (20% of all data)
+validation <-testing(train_test_split) #50% of the remainig data will be used for validation (20% of all data)
+
+#we estimate the model on the training set
+logistic2<-glm(default~annual_inc + term + grade + loan_amnt, family="binomial", training)
+p_val<-predict(logistic2, validation, type = "response") #predict probability of default on the validation set
+
+#we select the cutoff threshold using the estimated model and the validation set
+profit=0
+threshold=0
+for(i in 1:100) {
+  threshold[i]=i/400
+  one_or_zero_search<-ifelse(p_val>threshold[i],"1","0")
+  p_class_search<-factor(one_or_zero_search,levels=levels(validation$default))
+
+  con_search<-confusionMatrix(p_class_search,validation$default,positive="1")
+  profit[i]=con_search$table[1,1]*10-con_search$table[1,2]*70
+}
+
+ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) + geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with logistic 2 based on validation set")
+
+#output the maximum profit and the associated threshold
+paste0("Based on the validation set: Maximum profit per loan is $", round(max(profit)/nrow(validation),2), " achieved at a threshold of ", threshold[which.is.max(profit)]*100,"%.")
+#optimal threshold based on the validation set
+threshold=threshold[which.is.max(profit)]
+
+#Use the model estimated on the training set to predict probabilities of default on the testing set
+p_test<-predict(logistic2, testing, type = "response")
+
+#use the threshold estimated using the validation set to estimate the profits on the testing set
+one_or_zero<-ifelse(p_test>threshold,"1","0")
+p_class<-factor(one_or_zero,levels=levels(testing$default))
+con<-confusionMatrix(p_class,testing$default,positive="1")
+profit=con$table[1,1]*10-con$table[1,2]*70
+paste0("Based on the testing set the actual profit per loan is: $", round(profit/nrow(testing),2))
+
+```
+For this example (with these seeds), the cutoff threshold chosen by the validation set is lower than the one chosen in section 4.2 using in-sample information (i.e., we are more conservative because the model performance is lower out-of-sample than in-sample and false negatives are 7 times more costly than true negatives). The profit estimated on the testing set associated with the model (which was estimated on the training set) and the cutoff (which was chosen on the validation set) is even lower. This behavior is typical and is even more pronounced for models that suffer from overfitting (our model does not). 
+
+We can also do k-fold cross-validation using the caret package. See below.
+
+```{r}
+# for some of the caret commands it doesn't like it when default is equal to 0 or 1. So we change it to "D" for default and "P" for paid back.
+lc_clean<-lc_clean%>%
+  mutate(def=as.factor(ifelse(default=="1","D","P")))
+
+
+# 10 fold cross validation, reporting accuracy at a threshold of 50% 
+myControl <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = TRUE
+)
+
+logistic2_cv<-train(def~annual_inc + term + grade + loan_amnt,
+  lc_clean,
+  method="glm",
+  trControl =myControl
+)
+#the out-of-sample accuracy is given by the statistic below
+logistic2_cv$results
+
+
+# 10 fold cross validation, reporting AOC
+myControl <- trainControl(
+  method = "cv",
+  number = 10,
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE,
+  verboseIter = TRUE
+)
+
+logistic2_cv<-train(def~annual_inc + term + grade + loan_amnt,
+  lc_clean,
+  method="glm",
+  trControl =myControl
+)
+
+#the out-of-sample AUC is given by the statistic below
+logistic2_cv$results
+```
+The final model in all cases is estimated based on the whole data. But the accuracy or AUC reported is based on the k-fold cross validation.
+
+# Logistic regression and regularization (LASSO)
+
+We can also do logistic regression using the idea of regularization. Instead of maximizing log Likelihood to estimate the model's coefficients we can maximize log Likelihood minus $\lambda$  times the sum of the absolute values of the estimated coefficients. As in the OLS case, the penalty has the effect of shrinking the estimated coefficients towards zero.
+
+We estimate a huge model (interactions, polynomials) below using a tiny dataset -- the LASSO model chooses to set most coefficients to zero and as a result, it performs much better out-of-sample than the simple logistic regression.
+
+When creating a tiny dataset, we need to be sure that all grades of loan are represented. Therefore we perform stratified random sampling, on loan grade. 
+
+```{r, LASSO logistic regression, warning=FALSE}
+
+set.seed(121)
+#Using simple random sampling can result in a training dataset with no grade G loans because grade G has very low prevalence. 
+#==========================================================
+#train_test_split <- initial_split(lc_clean, prop = 0.01)
+#training <- training(train_test_split)
+#testing <- testing(train_test_split)
+#==========================================================
+
+
+
+# Therefore we perform stratified random sampling, on loan grade. 
+#==========================================================
+#Here we perform step sampling according to the variable "grade"
+#table(lc_clean$grade)
+#    A     B     C     D     E     F     G 
+# 9598 11439  7708  5074  2727  1012   311 
+# transform(as.data.frame(table(lc_clean$grade)),percentage_column=Freq/nrow(lc_clean)*100)
+# size=c(25.3452692, 30.2067654,  20.3543796 , 13.3988223 , 7.2011408 , 2.6723705 ,  0.8212522)
+
+n=round(table(lc_clean$grade) * 1/100)
+
+#stratified random sampling on loan grade
+sub_train=strata(lc_clean,stratanames=("grade"),size=rep(n, 7),method="srswor")
+head(sub_train)
+data_train=lc_clean[-sub_train$ID_unit,] 
+data_test=lc_clean[sub_train$ID_unit,]
+
+#Check the train and test data
+table(data_train$grade)
+table(data_test$grade)
+
+#Set the training data and test data
+training<-data_train
+testing<-data_test
+#==========================================================
+
+
+
+#LASSO logistic regression -- choosing the penalty lambda based on out-of-sample ROC metric
+trainControl <- trainControl(
+  method = "cv",
+  number = 10,
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE,
+  verboseIter = TRUE
+)
+
+model_lasso <- train(def~ term*grade*loan_amnt*poly(annual_inc,5),
+            data = training, 
+            method = "glmnet", 
+            trControl = trainControl,
+            metric = "ROC", # Optimize by AUC of ROC
+            family="binomial",
+            preProc = c("center", "scale"), #This option standardizes the data before running the LASSO regression
+             tuneGrid=expand.grid(
+              .alpha=1,
+              .lambda=seq(0, 0.1, length = 101))) # search for the best lambda between 0 and 0.1 in increments of 0.001 (for a total of 101 steps).
+#note that we are estimating 1,010 different models (101 values of lambda in each of 10 folds) so this might take a little time to estimate
+
+#graphical display of the out-of-sample AUC for different lambdas 
+plot(model_lasso)
+
+#model non zero coefficients
+sum(coef(model_lasso$finalModel,model_lasso$bestTune$lambda)!=0)
+#model zero coefficients
+sum(coef(model_lasso$finalModel,model_lasso$bestTune$lambda)==0)
+
+
+#chosen lambda
+model_lasso$bestTune$lambda
+
+#ROC of best lambda
+max(model_lasso$results$ROC)
+
+#ROC with lambda=0
+model_lasso$results$ROC[1]
+
+#Relative improvement
+(max(model_lasso$results$ROC)-model_lasso$results$ROC[1])/model_lasso$results$ROC[1]
+
+#Compute the out ofsample ROC curve for the LASSO model of best fit. Note that when we use caret to fit logistic regression, we need to use type="prob" to predict probabilities instead of type="response" when we use the glm package. (Ah, the subtleties of a free open-source software).
+pred<-predict(model_lasso,testing, type = "prob")
+x<-ifelse(testing$def=="D",1,0)
+ROC_lasso <- roc(x,pred[,1])
+
+#Compare it with logistic regression (this is quivalent to lasso with lambda 0)
+logistic<-glm(def~ term*grade*loan_amnt*poly(annual_inc,5), family="binomial", training)
+p_out<-predict(logistic, testing, type = "response")
+ROC_logistic_out <- roc(testing$default,p_out) 
+
+#Plot the ROC curves
+ggroc(list("LASSO Logistic out-of-sample"=ROC_lasso, "Logistic out-of-sample"=ROC_logistic_out))+ggtitle(paste("Model LASSO Logistic out-of-sample AUC=",round(auc(x,pred[,1])*100, digits=2),"%\nModel Logistic out-of-sample AUC=",round(auc(testing$default,p_out)*100, digits=2),"%"))    +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color="grey", linetype="dashed")
+
+```
+
+The LASSO model chooses $\lambda=$ `r model_lasso$bestTune$lambda` and sets `r sum(coef(model_lasso$finalModel,model_lasso$bestTune$lambda)==0)` coefficients to the value of zero and only `r sum(coef(model_lasso$finalModel,model_lasso$bestTune$lambda)!=0)` are non-zero. The model's AUC estimated using the k-fold cross validation (i.e., by dividing the tiny training set in to k-folds and doing cross validation) is `r model_lasso$results$ROC[1]` which constitutes an improvement of `r (max(model_lasso$results$ROC)-model_lasso$results$ROC[1])/model_lasso$results$ROC[1]*100`% relative to the logistic regression model (i.e. $\lambda=0$) estimated on the same dataset. 
+
+Checking the performance of the model on the much larger testing set confirms this.
+
+Note that the analysis above is in the spirit of train-validate-test. The training and validation happen on the small dataset which uses the method of k-fold cross validation to select the best lambda. 
+
+
+
