@@ -215,6 +215,7 @@ g3<-ggplot( lc_clean, aes( prob_default2, color=default) ) +
   xlab("Estimated Probability")
 
 g3
+
 ```
 > Can you see why model 2 is better than model 1? 
 
@@ -278,7 +279,8 @@ for(i in 1:100) {
   profit[i]=con_search$table[1,1]*10-con_search$table[1,2]*70
 }
 #plot profit against threshold (using a smoothed line to connect the points)
-ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) + geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with logistic 2")
+ggplot(as.data.frame(threshold), aes(x=threshold,y=profit)) +
+  geom_smooth(method = 'loess', se=0) +labs(title="Profit curve with logistic 2")
 
 #output the maximum profit and the associated threshold
 paste0("Maximum profit per loan is $", round(max(profit)/nrow(lc_clean),2), " achieved at a threshold of ", threshold[which.is.max(profit)]*100,"%.")
