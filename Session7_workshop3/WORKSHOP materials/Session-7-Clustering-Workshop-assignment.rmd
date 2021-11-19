@@ -802,7 +802,7 @@ Based on the clustering model with historical data, We assume users will behave 
 
 >Finally explain how the information about these clusters can be used to improve viewer experience for BBC or other online video streaming services.
 
-BBC can schedule and create more the TV programmes in different genres in corresponding time slots in a day of the clusters. ExL more sports related content on the weekend for cluster 1.
+BBC can schedule and create more the TV programmes in different genres in corresponding time slots in a day of the clusters. Ex: more sports related content on the weekend for cluster 1.
 
 And they can also do more marketing campaigns targeting on different groups of customers based on the clustering results.
 
