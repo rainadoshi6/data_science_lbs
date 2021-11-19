@@ -433,11 +433,7 @@ graphknn3<-ggplot(xa2k3, aes(x = variable, y = value))+  geom_line(aes(color =cl
         axis.text.x = element_text(angle=45, hjust=1),legend.title=element_text(size=5),legend.text = element_text(size=5))+ggtitle("K-means Centers k=3")
 library(gridExtra)
 graphkmeans_2clusters
-
- graphknn3
-
-
-
+graphknn3
 
 ```  
   
@@ -600,10 +596,7 @@ model_km5$size
 ```
 
 ```{r fig.width=10, fig.height = 15}
-
 grid.arrange(graphknn3,graphknn4,graphknn5, nrow = 3)
-
-
 ```
 
 As we add more clusters we discover different clusters of whiskies. By looking at the cluster centers and number of whiskies in each cluster, try to determine how many clusters we should have in our results? What can you conclude? Also check if your conclusions are in agreement with the elbow chart, and silhouette and gap statistic analysis. 
@@ -630,10 +623,11 @@ Altough we may not agree on the number of clusters in this data set, I think we 
 Let's set the number of clusters equal to 3 at investigate if there is any correlation between location and clusters. After class, check if your conclusions change when you set the number of clusters equal to 4 and 5.
 
 ```{r Map Visualization, message=FALSE, warning=FALSE}
-
-
-
-mapScotland+ geom_point(aes(x =lat, y = long,color= as.factor(model_km3$cluster)),data=whisky, alpha=0.8, size=2)+labs(color = "Cluster")+scale_color_hue(l=25)
+mapScotland+
+  geom_point(aes(x =lat, y = long,color= as.factor(model_km3$cluster)),
+             data=whisky, alpha=0.8, size=2)+
+  labs(color = "Cluster")+
+  scale_color_hue(l=25)
 ```
 
 Does the geographical location play a role in clustering results? Can you suggest another way to check this?
