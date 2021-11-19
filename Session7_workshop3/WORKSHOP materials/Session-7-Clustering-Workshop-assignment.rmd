@@ -298,6 +298,7 @@ userdatall <- cleaned_BBC_Data %>%
 ```{r add one more variable}
 # Some people just randomly watch pieces of programs rather than watch the whole program.
 # the median percentage of a program the user would watch. and std of it.
+# We get some NA's for the standard deviation column because some customers have only one instance a viewing
 userdatall<-cleaned_BBC_Data %>%
   mutate(program_viewed_percentage = time_viewed_min/prog_duration_min) %>% 
   group_by(user_id) %>% 
@@ -377,6 +378,8 @@ Use `summary("kmeans Object")` to examine the components of the results of the c
 
 ```{r fit kmean k2}
 
+set.seed(1234)
+
 k=2
 # Get rid of variables that you might not need. Do not include no shows as well because it is highly correlated with total time
 clusters_bbc_data <- userdata_red %>% 
@@ -396,6 +399,12 @@ clusters_bbc$size
 
 
 ## Visualizing the results
+
+```{r}
+
+```
+
+
 
 ### Cluster centers 
 
