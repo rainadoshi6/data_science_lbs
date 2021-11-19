@@ -459,9 +459,9 @@ As a "side exercise", use K-means method again but this time do not log transfor
 
 ```{r cluster centers without log transform}
 userdata_red %>% 
-  select(-c(user_id)) %>% 
+  select(-c(user_id,noShows)) %>% 
   scale() %>% #scale the data
-  eclust(x=., FUNcluster = "kmeans", k = k, nstart = 50, graph = F) %>% #train kmeans clustering
+  eclust(x=., FUNcluster = "kmeans", k = 2, nstart = 50, graph = F) %>% #train kmeans clustering
   fviz_cluster(userdata_red, palette = "Set2",
              geom = "point",
              ggtheme = theme_minimal())
@@ -470,6 +470,9 @@ userdata_red %>%
 
 Do you observe any outliers? 
 
+> Yes, without taking the log of total time and including no_shows, we can see there are a few outliers that are included in cluster 2. 
+
+> Since we are looking for general tendencies, we want to remove the ouliers as PCA is very sensative to outliers. We want to make the points in the cluters as similiar to themselves as possible (low within cluter variance), and the inclusion of the outliers makes this hard to do and can lead to misleading results. 
 
 ## Elbow Chart
 
@@ -500,7 +503,11 @@ fviz_nbclust(clusters_bbc_data,
 
 > Question 5: Summarize the conclusions of your Elbow Chart and Silhoutte analysis. What range of values for the number of clusters seems more plausible?
 
-< to answer > 4 can be a good number of clusters
+> When looking at this elbow chart alone, we get to see what happens when too may data points are in the middle. As one can see, the sum of the square errors is constantly decreasing as we increase number of K clusters so there is no obvious optimal level of K when we look at this elbow chart. Usually, one will see a line that looks like an elbow, with a rapid decrease SSE when one initially increases K, and then one a threshold is reached, the change in SSE diminishes a lot. Here, we can see that at K=17 the SSE stops decreasing as much, and at k=19, it starts to increase. According to this elbow chart, the SSE is the lowest when K = 19, however we need to take into account the meaningfulness of clustering if we have 19 different clusters. 
+
+>	The silhouette analysis shows us how well matched the data points in each cluster are to each other. We would want the mean Silhoutte Score, which is the average similarity within clusters, to be high, as we want to increase the number of clusters as long as the members within each cluster keep in being different. When we go from k=4 to k=5 the SW decreases a significant amount, telling us there there is not as much similarity within the clusters when we have 5 clusters.
+
+> Conclusiong: 4 can be a good number of clusters
 
 
 ## Comparing k-means with different k
@@ -717,7 +724,8 @@ model_km4_test <-testing %>% #scale the data
 
 p_train <- fviz_cluster(model_km4_train, geom = "point",  data = clusters_bbc_data) + ggtitle("k = 4 train")
 p_test <- fviz_cluster(model_km4_test, geom = "point",  data = clusters_bbc_data) + ggtitle("k = 4 test")
-grid.arrange(p_train,p_test, nrow = 2)
+
+p_train + p_test
 
 
 
@@ -750,8 +758,7 @@ graph_cluster_centers_test<- ggplot(cluster_centers_test_transpose, aes(x = vari
   ggtitle("K-means Centers k=4 test")
 
 
-graph_cluster_centers_train
-graph_cluster_centers_test
+graph_cluster_centers_train/graph_cluster_centers_test
 
 
 train_silhouette<-fviz_silhouette(model_km4_train)+
@@ -761,14 +768,24 @@ test_silhouette<-fviz_silhouette(model_km4_test)+
   ggtitle(paste("k = 4 test", "avg sw=",
                 format(round(model_km4_test$silinfo$avg.width,3))))
 
-train_silhouette
-test_silhouette
+train_silhouette+test_silhouette
 
 ```
 
 
 >Question 8: Based on the results, what can you conclude? Are you more or less confident in your results?
 
+We got similar results for training and testing data. 
+
+Then we show the clusters in each set with their features (the variables they have the highest value with).
+
+Training set:
+- cluster 1: Weekend Entertainment, Sports (cluster 2 in testing data)
+- cluster 2: Day, Weekday, News, Factual and Weather (cluster 3 in testing data) (Maybe old peole)
+- cluster 3: Evening, Drama (cluster 1 in testing data)
+- cluster 4: Afternoon, Children and Learning
+
+The PCA and Silhouette visualizations are also very similar. So we are more confident with the clustering results.
 
 # Conclusions
 
@@ -776,8 +793,16 @@ test_silhouette
 
 >Do you think you chose the right `k`? Explain you reasoning.
 
+Based on Silhouette method, the score becomes worse when increase k from 4 to 5. In addition, we can get insightful conclusions based on k=4. Although with k=19 the silhouette score is the lowest, the explainablity will be worse with too many clusters. We believe k=4 is a right number of clusters
+
 >What assumptions do you think your results are sensitive to? How can you check the robustness of your conclusions? Just explain, you don't have to carry out the analysis.
+
+Based on the clustering model with historical data, We assume users will behave in the same way as before. We can check the robustness by splitting the data based on time and testing the performance of models.
 
 
 >Finally explain how the information about these clusters can be used to improve viewer experience for BBC or other online video streaming services.
+
+BBC can schedule and create more the TV programmes in different genres in corresponding time slots in a day of the clusters. ExL more sports related content on the weekend for cluster 1.
+
+And they can also do more marketing campaigns targeting on different groups of customers based on the clustering results.
 
