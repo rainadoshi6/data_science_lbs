@@ -725,13 +725,13 @@ fviz_cluster(k2_pam, data = whisky_tasting_notes) + ggtitle("PAM k = 3")+scale_c
 We can also use the other visualization tools with PAM results.
 
 ```{r PAM Clustering visual others, message=FALSE, warning=FALSE}
-
 #Let's look at the elbow chart
 fviz_nbclust(whisky_tasting_notes,FUNcluster= cluster::pam, method = "wss")+
   labs(subtitle = "Elbow method")
 
 #Let's look at the silhouette analysis
-fviz_silhouette(k2_pam)+ ggtitle(paste("k = 3", "avg sw=",format(round(k2_pam$silinfo$avg.width,3))))
+fviz_silhouette(k2_pam)+
+  ggtitle(paste("k = 3", "avg sw=",format(round(k2_pam$silinfo$avg.width,3))))
 ```
 
 
@@ -748,24 +748,25 @@ Finding clusters using h(ierarchical)-clustering requires a slighlty different a
 
 
 ```{r H-clustering Distance, message=FALSE, warning=FALSE}
-
 #dist function find the distances between points
 res.dist <- dist(whisky_tasting_notes, method = "euclidean")
  
 ```
+
 Now we find the clusters using H-clustering.
+
 ```{r H-clustering Fit, message=FALSE, warning=FALSE} 
 #Let's fit a H-Clustering methods. k is the number of clusters
 #hc_method is the distance metric H-Clustering uses. See slides for more.
 # I will set the number of clusters equal to 3 although we can do this after we find the distances.
 # hcut is also part of factoextra library
-res.hc <-  hcut(res.dist, hc_method = "ward.D",k=3)
+res.hc <- hcut(res.dist, hc_method = "ward.D",k=3)
 summary(res.hc)
 fviz_silhouette(res.hc)
 #Let's look at the size of the clusters
 res.hc$size
 #Before we look at more sophisticated ways of visualizing the results, let's first use the base plot function with the results. Base method works faster and so it's more appropriate for large treees.
-  plot(res.hc,hang = -1, cex = 0.5)
+plot(res.hc,hang = -1, cex = 0.5, labels = FALSE)
 ```
 
 For larger data sets there are advanced functions to manage the computational requirements. We will not cover these methods in this class.
